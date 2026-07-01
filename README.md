@@ -1,7 +1,8 @@
 ## Future Idea
 - LLM to see bad & good or moderate 
 - New Design
-- New Insider
+- Better Insider 
+- Scrape more News & Stocks Website for better and accurate information
 
 ## Step 1: Prerequisites
 
