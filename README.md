@@ -1,3 +1,8 @@
+## Future Idea
+- LLM to see bad & good or moderate 
+- New Design
+- New Insider
+
 ## Step 1: Prerequisites
 
 | What | Why | How to get it |
