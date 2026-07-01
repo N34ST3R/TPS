@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPS Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f; --bg-elevated: #0f0f16; --card: #12121a;
+            --border: #1e1e2e; --border-focus: #2a2a3e;
+            --accent: #00ff88; --accent-dim: #00ff8818;
+            --blue: #3b82f6; --blue-dim: #3b82f618;
+            --red: #ef4444; --red-dim: #ef444418;
+            --yellow: #f59e0b; --yellow-dim: #f59e0b18;
+            --purple: #8b5cf6; --purple-dim: #8b5cf618;
+            --cyan: #06b6d4; --cyan-dim: #06b6d418;
+            --text: #e0e0e0; --muted: #6b7280; --dim: #374151;
+            --sidebar-w: 240px; --sidebar-collapsed: 64px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Sidebar */
+        .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); background: var(--bg-elevated); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 100; transition: width 0.2s; }
+        .sidebar.collapsed { width: var(--sidebar-collapsed); }
+        .sidebar .logo { padding: 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
+        .sidebar .logo-icon { width: 28px; height: 28px; color: var(--accent); flex-shrink: 0; }
+        .sidebar .logo-text { font-size: 15px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+        .sidebar .logo-text span { color: var(--muted); font-weight: 400; }
+        .sidebar.collapsed .logo-text { display: none; }
+        .sidebar nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+        .sidebar nav a { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; transition: all 0.15s; border-left: 3px solid transparent; cursor: pointer; }
+        .sidebar nav a:hover { color: var(--text); background: var(--card); }
+        .sidebar nav a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+        .sidebar nav a i { width: 18px; height: 18px; flex-shrink: 0; }
+        .sidebar.collapsed nav a span { display: none; }
+        .sidebar.collapsed nav a { justify-content: center; padding: 10px; }
+        .sidebar .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); font-size: 11px; color: var(--dim); }
+        .sidebar .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; margin-right: 6px; }
+        .sidebar.collapsed .sidebar-footer { display: none; }
+        .sidebar-toggle { position: absolute; top: 24px; right: -12px; width: 24px; height: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); z-index: 101; }
+        .sidebar-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+        /* Main */
+        .main { margin-left: var(--sidebar-w); min-height: 100vh; transition: margin-left 0.2s; }
+        .main.expanded { margin-left: var(--sidebar-collapsed); }
+        .topbar { position: sticky; top: 0; z-index: 50; height: 52px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 16px; }
+        .topbar h1 { font-size: 14px; font-weight: 600; white-space: nowrap; flex-shrink: 0; margin-right: 4px; }
+        .topbar .search { flex: 0 0 320px; position: relative; }
+        .topbar .search input { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; }
+        .topbar .search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+        .topbar .status-bar { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); flex-shrink: 0; white-space: nowrap; }
+        .topbar .status-bar .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+        .alert-bell { position: relative; cursor: pointer; padding: 6px; border-radius: 6px; transition: background 0.15s; }
+        .alert-bell:hover { background: var(--card); }
+        .alert-bell .badge-count { position: absolute; top: 0; right: 0; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .content { padding: 20px 24px; max-width: 1600px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .card-header h2 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .card-header h2 i { width: 14px; height: 14px; }
+        .card-header .badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+        .badge-green { background: var(--accent-dim); color: var(--accent); }
+        .badge-red { background: var(--red-dim); color: var(--red); }
+        .badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
+        .badge-blue { background: var(--blue-dim); color: var(--blue); }
+        .badge-purple { background: var(--purple-dim); color: var(--purple); }
+        .badge-cyan { background: var(--cyan-dim); color: var(--cyan); }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        @media (max-width: 1200px) { .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 800px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+        .stat-card { text-align: center; padding: 20px 12px; }
+        .stat-card .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; line-height: 1; }
+        .stat-card .stat-label { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 8px 10px; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); }
+        td { padding: 8px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+
+        .news-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border-bottom: 1px solid var(--border); transition: background 0.15s; cursor: pointer; }
+        .news-item:hover { background: rgba(255,255,255,0.02); }
+        .news-item:last-child { border-bottom: none; }
+        .news-source { font-size: 10px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; min-width: 100px; flex-shrink: 0; }
+        .news-title { font-size: 13px; line-height: 1.4; flex: 1; }
+        .news-title .sentiment { vertical-align: middle; margin-left: 6px; }
+        .news-meta { font-size: 11px; color: var(--muted); white-space: nowrap; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+
+        .sentiment { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+        .sentiment.bullish { background: var(--accent-dim); color: var(--accent); }
+        .sentiment.bearish { background: var(--red-dim); color: var(--red); }
+        .sentiment.neutral { background: rgba(255,255,255,0.05); color: var(--muted); }
+        .impact { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+        .impact.high { background: var(--red-dim); color: var(--red); }
+        .impact.medium { background: var(--yellow-dim); color: var(--yellow); }
+        .impact.low { background: rgba(255,255,255,0.05); color: var(--muted); }
+
+        .input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .input-row input, .input-row select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: 'Inter', sans-serif; }
+        .input-row input:focus, .input-row select:focus { outline: none; border-color: var(--accent); }
+        .btn { background: var(--accent); color: #000; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 6px; transition: all 0.15s; white-space: nowrap; }
+        .btn:hover { background: #00cc6a; }
+        .btn.secondary { background: var(--border); color: var(--text); }
+        .btn.secondary:hover { background: #2a2a3e; }
+        .btn.danger { background: var(--red); color: #fff; }
+        .btn.small { padding: 5px 10px; font-size: 11px; }
+        .btn.sell { background: var(--red); color: #fff; }
+        .btn.sell:hover { background: #dc2626; }
+
+        .signal-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg); border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--border); cursor: pointer; transition: border-color 0.15s; }
+        .signal-row:hover { border-color: var(--accent); }
+        .signal-row .sym { font-weight: 700; font-size: 14px; min-width: 60px; }
+        .signal-row .price { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); min-width: 80px; }
+        .signal-row .patterns { font-size: 11px; color: var(--muted); flex: 1; }
+        .signal-row .score-box { text-align: right; min-width: 60px; }
+        .signal-row .score { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; line-height: 1; }
+        .score.green { color: var(--accent); } .score.red { color: var(--red); } .score.yellow { color: var(--yellow); } .score.gray { color: var(--muted); }
+        .signal-row .label { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.3px; font-family: 'JetBrains Mono', monospace; }
+
+        .crypto-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+        .crypto-row:last-child { border-bottom: none; }
+        .crypto-rank { font-family: 'JetBrains Mono', monospace; color: var(--dim); min-width: 24px; }
+        .crypto-name { font-weight: 600; min-width: 60px; }
+        .crypto-price { font-family: 'JetBrains Mono', monospace; flex: 1; text-align: right; }
+        .crypto-change { font-family: 'JetBrains Mono', monospace; min-width: 60px; text-align: right; }
+        .crypto-change.up { color: var(--accent); } .crypto-change.down { color: var(--red); }
+
+        .loading { display: flex; align-items: center; gap: 8px; padding: 20px; color: var(--muted); font-size: 12px; }
+        .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty { text-align: center; padding: 32px; color: var(--dim); font-size: 12px; }
+        .page { display: none; } .page.active { display: block; }
+
+        .toast { position: fixed; bottom: 20px; right: 20px; background: var(--card); border: 1px solid var(--accent); padding: 10px 16px; border-radius: 6px; font-size: 12px; z-index: 200; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .modal-overlay { display: none; position: fixed; inset: 0; background: #00000088; z-index: 150; align-items: center; justify-content: center; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; max-width: 600px; width: 92%; max-height: 80vh; overflow-y: auto; }
+        .modal h2 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+        .tab-bar { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .tab-bar button { background: none; border: none; color: var(--muted); padding: 8px 14px; font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent; font-family: 'Inter', sans-serif; font-weight: 500; transition: all 0.15s; }
+        .tab-bar button:hover { color: var(--text); }
+        .tab-bar button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .pagination button { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+        .pagination button:hover { border-color: var(--accent); }
+        .pagination button.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+        .pagination button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .pagination .page-info { font-size: 11px; color: var(--muted); }
+
+        .stock-search-box { position: relative; }
+        .stock-search-box input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px 12px 10px 12px; border-radius: 8px; font-size: 14px; font-family: 'Inter', sans-serif; }
+        .stock-search-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+        .stock-search-results { position: absolute; top: 100%; left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px; max-height: 300px; overflow-y: auto; z-index: 60; display: none; }
+        .stock-search-results.show { display: block; }
+        .stock-search-item { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 12px; }
+        .stock-search-item:hover { background: var(--accent-dim); }
+        .stock-search-item .sym { font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+        .stock-search-item .sector { color: var(--dim); font-size: 11px; }
+
+        .position-card { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border); }
+        .position-card .pos-sym { font-weight: 700; font-size: 16px; min-width: 80px; font-family: 'JetBrains Mono', monospace; }
+        .position-card .pos-details { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .position-card .pos-label { font-size: 10px; color: var(--dim); text-transform: uppercase; }
+        .position-card .pos-val { font-size: 13px; font-family: 'JetBrains Mono', monospace; }
+        .position-card .pos-actions { display: flex; gap: 4px; }
+
+        .trade-modal { display: grid; gap: 12px; }
+        .trade-modal label { font-size: 12px; color: var(--muted); }
+        .trade-modal input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-size: 14px; font-family: 'JetBrains Mono', monospace; }
+        .trade-modal input:focus { outline: none; border-color: var(--accent); }
+        .trade-modal .trade-summary { padding: 10px; background: var(--bg); border-radius: 6px; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+    </style>
+</head>
+<body>
+
+<div class="sidebar" id="sidebar">
+    <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
+        <div class="logo-text">TPS <span>Scanner</span></div>
+    </div>
+    <nav>
+        <a class="active" onclick="showPage('dashboard')" data-page="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+        <a onclick="showPage('stocks')" data-page="stocks"><i data-lucide="bar-chart-3"></i><span>All Stocks</span></a>
+        <a onclick="showPage('live')" data-page="live"><i data-lucide="radio"></i><span>Live Watch</span></a>
+        <a onclick="showPage('sim')" data-page="sim"><i data-lucide="wallet"></i><span>Simulator</span></a>
+        <a onclick="showPage('news')" data-page="news"><i data-lucide="newspaper"></i><span>News</span></a>
+        <a onclick="showPage('crypto')" data-page="crypto"><i data-lucide="bitcoin"></i><span>Crypto</span></a>
+        <a onclick="showPage('calendar')" data-page="calendar"><i data-lucide="calendar"></i><span>Calendar</span></a>
+        <a onclick="showPage('options')" data-page="options"><i data-lucide="layers"></i><span>Options Flow</span></a>
+        <a onclick="showPage('insider')" data-page="insider"><i data-lucide="shield"></i><span>Insider</span></a>
+        <a onclick="showPage('analyst')" data-page="analyst"><i data-lucide="target"></i><span>Analyst</span></a>
+    </nav>
+    <div class="sidebar-footer">
+        <div><span class="status-dot"></span>Connected</div>
+        <div style="margin-top:4px" id="last-update">Last: --</div>
+    </div>
+    <div class="sidebar-toggle" onclick="toggleSidebar()"><i data-lucide="chevrons-left" style="width:14px;height:14px"></i></div>
+</div>
+
+<div class="main" id="main">
+    <div class="topbar">
+        <h1 id="page-title">Dashboard</h1>
+        <div class="search">
+            <input type="text" id="global-search" placeholder="Quick scan (e.g. AAPL, BTC-USD)..." onkeydown="if(event.key==='Enter')quickScan()">
+        </div>
+        <div class="alert-bell" onclick="checkAlerts()" title="Check Alerts">
+            <i data-lucide="bell" style="width:20px;height:20px;color:var(--muted)"></i>
+            <span class="badge-count" id="alert-count" style="display:none">0</span>
+        </div>
+        <div class="status-bar">
+            <div class="live-dot"></div>
+            <span>Live</span>
+            <span id="clock" class="mono">--:--:--</span>
+        </div>
+    </div>
+
+    <div class="content">
+
+        <!-- DASHBOARD -->
+        <div class="page active" id="page-dashboard">
+            <div class="grid-4" style="margin-bottom:12px">
+                <div class="card stat-card"><div class="stat-value" style="color:var(--accent)" id="stat-portfolio">$100K</div><div class="stat-label">Portfolio</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--blue)" id="stat-pnl">+0.0%</div><div class="stat-label">Total P&L</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--yellow)" id="stat-positions">0</div><div class="stat-label">Positions</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--cyan)" id="stat-cash">$100K</div><div class="stat-label">Cash</div></div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="activity"></i> Recent Signals</h2></div>
+                    <div id="dash-signals"><div class="empty">No signals yet. Scan a ticker to begin.</div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="chart-bar"></i> Signal Distribution</h2></div>
+                    <div style="position:relative;height:250px"><canvas id="chart-distribution"></canvas></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="zap"></i> Quick Scan</h2></div>
+                <div class="input-row">
+                    <div class="stock-search-box" style="flex:1">
+                        <input type="text" id="quick-symbol" placeholder="Enter ticker (e.g. AAPL, TSLA, BTC-USD)..." oninput="searchStocks(this.value)" onfocus="this.select()">
+                        <div class="stock-search-results" id="quick-search-results"></div>
+                    </div>
+                    <select id="quick-tf">
+                        <option value="5m">5 min</option>
+                        <option value="15m">15 min</option>
+                        <option value="1h">1 Hour</option>
+                        <option value="1d">Daily</option>
+                    </select>
+                    <button class="btn" onclick="quickScan()"><i data-lucide="zap" style="width:14px;height:14px"></i> Scan</button>
+                </div>
+                <div id="quick-result"></div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="newspaper"></i> Live News</h2><span class="badge badge-blue" id="news-count">0</span></div>
+                    <div id="dash-news" style="max-height:300px;overflow-y:auto"><div class="loading"><div class="spinner"></div>Loading news...</div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="bitcoin"></i> Crypto</h2><span class="badge badge-purple" id="crypto-count">0</span></div>
+                    <div id="dash-crypto" style="max-height:300px;overflow-y:auto"><div class="loading"><div class="spinner"></div>Loading crypto...</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ALL STOCKS -->
+        <div class="page" id="page-stocks">
+            <div class="card">
+                <div class="card-header">
+                    <h2><i data-lucide="bar-chart-3"></i> All Available Stocks</h2>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <select id="stock-sector-filter" onchange="filterStocks()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px">
+                            <option value="all">All Sectors</option>
+                        </select>
+                        <input type="text" id="stock-text-filter" placeholder="Search..." oninput="filterStocks()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;width:160px">
+                    </div>
+                </div>
+                <div id="stock-list-container" style="max-height:600px;overflow-y:auto">
+                    <div class="loading"><div class="spinner"></div>Loading stocks...</div>
+                </div>
+                <div class="pagination" id="stock-pagination"></div>
+            </div>
+        </div>
+
+        <!-- LIVE WATCH -->
+        <div class="page" id="page-live">
+            <div class="card" style="margin-bottom:12px">
+                <div class="card-header">
+                    <h2><i data-lucide="radio"></i> Live Stock Watchlist</h2>
+                    <div style="display:flex;gap:8px">
+                        <div class="stock-search-box">
+                            <input type="text" id="live-add-input" placeholder="Add symbol..." oninput="searchStocksLive(this.value)" onfocus="this.select()" style="width:200px">
+                            <div class="stock-search-results" id="live-search-results"></div>
+                        </div>
+                        <button class="btn small" onclick="refreshLiveWatch()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button>
+                    </div>
+                </div>
+                <div id="live-watch-table"><div class="loading"><div class="spinner"></div>Loading live data...</div></div>
+            </div>
+        </div>
+
+        <!-- SIMULATOR -->
+        <div class="page" id="page-sim">
+            <div class="grid-4" style="margin-bottom:12px">
+                <div class="card stat-card"><div class="stat-value" style="color:var(--accent)" id="sim-total">$100K</div><div class="stat-label">Total Value</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--blue)" id="sim-cash">$100K</div><div class="stat-label">Cash</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--yellow)" id="sim-pnl">$0</div><div class="stat-label">P&L</div></div>
+                <div class="card stat-card"><div class="stat-value" style="color:var(--purple)" id="sim-pnl-pct">0.0%</div><div class="stat-label">P&L %</div></div>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="briefcase"></i> Positions</h2><button class="btn small secondary" onclick="resetSim()"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i> Reset</button></div>
+                    <div id="sim-positions"><div class="empty">No positions yet. Buy a stock to start.</div></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h2><i data-lucide="clock"></i> Recent Transactions</h2></div>
+                    <div id="sim-transactions" style="max-height:400px;overflow-y:auto"><div class="empty">No transactions yet.</div></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="plus-circle"></i> Quick Trade</h2></div>
+                <div class="input-row">
+                    <div class="stock-search-box" style="flex:1">
+                        <input type="text" id="trade-symbol" placeholder="Symbol..." oninput="searchStocksTrade(this.value)" onfocus="this.select()">
+                        <div class="stock-search-results" id="trade-search-results"></div>
+                    </div>
+                    <input type="number" id="trade-qty" placeholder="Qty" min="1" value="1" style="width:80px">
+                    <button class="btn" onclick="showTradeModal('buy')">Buy</button>
+                    <button class="btn sell" onclick="showTradeModal('sell')">Sell</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEWS -->
+        <div class="page" id="page-news">
+            <div class="card">
+                <div class="card-header">
+                    <h2><i data-lucide="newspaper"></i> Live News Feed</h2>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <select id="news-filter" onchange="filterNews()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px">
+                            <option value="all">All Sentiment</option>
+                            <option value="bullish">Bullish</option>
+                            <option value="bearish">Bearish</option>
+                            <option value="neutral">Neutral</option>
+                        </select>
+                        <button class="btn small secondary" onclick="loadNews()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button>
+                    </div>
+                </div>
+                <div id="news-table"><div class="loading"><div class="spinner"></div>Loading news...</div></div>
+                <div class="pagination" id="news-pagination"></div>
+            </div>
+        </div>
+
+        <!-- CRYPTO -->
+        <div class="page" id="page-crypto">
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="bitcoin"></i> Top Cryptocurrencies</h2><button class="btn small secondary" onclick="loadCrypto()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button></div>
+                <div id="crypto-table"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+                <div class="pagination" id="crypto-pagination"></div>
+            </div>
+        </div>
+
+        <!-- CALENDAR -->
+        <div class="page" id="page-calendar">
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="calendar"></i> Economic Calendar</h2><button class="btn small secondary" onclick="loadCalendar()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button></div>
+                <div id="calendar-table"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+                <div class="pagination" id="calendar-pagination"></div>
+            </div>
+        </div>
+
+        <!-- OPTIONS FLOW -->
+        <div class="page" id="page-options">
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="layers"></i> Options Flow</h2><button class="btn small secondary" onclick="loadOptions()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button></div>
+                <div id="options-table"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+                <div class="pagination" id="options-pagination"></div>
+            </div>
+        </div>
+
+        <!-- INSIDER -->
+        <div class="page" id="page-insider">
+            <div class="card">
+                <div class="card-header">
+                    <h2><i data-lucide="shield"></i> Insider Trading</h2>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <select id="insider-filter" onchange="filterInsider()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px">
+                            <option value="all">All Trades</option>
+                            <option value="buy">Buys Only</option>
+                            <option value="sell">Sells Only</option>
+                        </select>
+                        <button class="btn small secondary" onclick="loadInsider()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button>
+                    </div>
+                </div>
+                <div id="insider-table"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+                <div class="pagination" id="insider-pagination"></div>
+            </div>
+        </div>
+
+        <!-- ANALYST -->
+        <div class="page" id="page-analyst">
+            <div class="card">
+                <div class="card-header"><h2><i data-lucide="target"></i> Analyst Ratings</h2><button class="btn small secondary" onclick="loadAnalyst()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i></button></div>
+                <div id="analyst-table"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal-content"></div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+lucide.createIcons();
+
+const ITEMS_PER_PAGE = 30;
+const pageTitles = {
+    dashboard: 'Dashboard', stocks: 'All Stocks', live: 'Live Watch', sim: 'Simulator',
+    news: 'News', crypto: 'Crypto', calendar: 'Economic Calendar', options: 'Options Flow',
+    insider: 'Insider Trading', analyst: 'Analyst Ratings'
+};
+
+let allStocksData = [];
+let allNewsData = [];
+let allCryptoData = [];
+let allInsiderData = [];
+let allCalendarData = [];
+let allOptionsData = [];
+let currentPage = { stocks: 0, news: 0, crypto: 0, insider: 0, calendar: 0, options: 0 };
+
+function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + name)?.classList.add('active');
+    document.querySelectorAll('.sidebar nav a').forEach(a => a.classList.remove('active'));
+    document.querySelector(`.sidebar nav a[data-page="${name}"]`)?.classList.add('active');
+    document.getElementById('page-title').textContent = pageTitles[name] || name;
+    const loaders = {
+        dashboard: loadDashboard, stocks: loadAllStocks, live: loadLiveWatch, sim: loadSimulator,
+        news: loadNews, crypto: loadCrypto, calendar: loadCalendar, options: loadOptions,
+        insider: loadInsider, analyst: loadAnalyst
+    };
+    if (loaders[name]) loaders[name]();
+}
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+    document.getElementById('main').classList.toggle('expanded');
+}
+
+function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast'; t.textContent = msg;
+    document.getElementById('toast-container').appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function openModal(html) {
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('show');
+    lucide.createIcons();
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+}, 1000);
+
+function fmt$(n) { return n >= 1e9 ? '$' + (n/1e9).toFixed(1) + 'B' : n >= 1e6 ? '$' + (n/1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + (n/1e3).toFixed(1) + 'K' : '$' + (n||0).toFixed(2); }
+function fmtNum(n) { return n >= 1e9 ? (n/1e9).toFixed(1) + 'B' : n >= 1e6 ? (n/1e6).toFixed(1) + 'M' : n >= 1e3 ? (n/1e3).toFixed(1) + 'K' : (n||0).toLocaleString(); }
+function scoreClass(s) { return s >= 60 ? 'green' : s >= 40 ? 'yellow' : 'gray'; }
+function labelClass(l) { if (l?.includes('BUY')) return 'green'; if (l?.includes('SELL')) return 'red'; if (l === 'HOLD') return 'yellow'; return 'gray'; }
+function changeClass(v) { return v >= 0 ? 'up' : 'down'; }
+function changeSign(v) { return v >= 0 ? '+' : ''; }
+
+function paginate(items, page, containerId, renderFn) {
+    const total = items.length;
+    const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+    const start = page * ITEMS_PER_PAGE;
+    const end = Math.min(start + ITEMS_PER_PAGE, total);
+    const pageItems = items.slice(start, end);
+    renderFn(pageItems);
+    const pag = document.getElementById(containerId);
+    if (!pag || totalPages <= 1) { if (pag) pag.innerHTML = ''; return; }
+    let html = '<button ' + (page === 0 ? 'disabled' : '') + ' onclick="goPage(\'' + containerId.replace('-pagination','') + '\',' + (page - 1) + ')">Prev</button>';
+    html += '<span class="page-info">' + (page + 1) + ' / ' + totalPages + ' (' + total + ' items)</span>';
+    html += '<button ' + (page >= totalPages - 1 ? 'disabled' : '') + ' onclick="goPage(\'' + containerId.replace('-pagination','') + '\',' + (page + 1) + ')">Next</button>';
+    pag.innerHTML = html;
+}
+
+function goPage(section, page) {
+    currentPage[section] = page;
+    if (section === 'stocks') renderStockPage();
+    else if (section === 'news') renderNewsPage();
+    else if (section === 'crypto') renderCryptoPage();
+    else if (section === 'insider') renderInsiderPage();
+    else if (section === 'calendar') renderCalendarPage();
+    else if (section === 'options') renderOptionsPage();
+}
+
+function renderSignalRow(s) {
+    const sc = scoreClass(s.score);
+    const lc = labelClass(s.label);
+    const patterns = (s.patterns || []).map(p => p.pattern).join(', ') || 'None';
+    return `<div class="signal-row" onclick="showScanDetail('${s.symbol}')">
+        <div class="sym">${s.symbol}</div>
+        <div class="price">$${(s.price||0).toFixed(2)}</div>
+        <div class="patterns">${patterns}</div>
+        <div class="score-box"><div class="score ${sc}">${s.score}</div><span class="label ${lc}">${s.label}</span></div>
+    </div>`;
+}
+
+// --- Stock Search ---
+function searchStocks(q) { showSearchResults(q, 'quick-search-results', 'quick-symbol'); }
+function searchStocksLive(q) { showSearchResults(q, 'live-search-results', 'live-add-input'); }
+function searchStocksTrade(q) { showSearchResults(q, 'trade-search-results', 'trade-symbol'); }
+
+function showSearchResults(q, resultsId, inputId) {
+    const el = document.getElementById(resultsId);
+    if (!q || q.length < 1) { el.classList.remove('show'); return; }
+    const ql = q.toUpperCase();
+    const matches = allStocksData.filter(s => s.symbol.toUpperCase().includes(ql) || (s.name||'').toUpperCase().includes(ql)).slice(0, 10);
+    if (!matches.length) { el.classList.remove('show'); return; }
+    el.innerHTML = matches.map(s => `<div class="stock-search-item" onclick="document.getElementById('${inputId}').value='${s.symbol}';document.getElementById('${resultsId}').classList.remove('show')"><span class="sym">${s.symbol}</span><span class="sector">${s.sector || s.type || ''}</span></div>`).join('');
+    el.classList.add('show');
+}
+
+document.addEventListener('click', (e) => {
+    document.querySelectorAll('.stock-search-results').forEach(el => {
+        if (!el.parentElement.contains(e.target)) el.classList.remove('show');
+    });
+});
+
+// --- Dashboard ---
+async function loadDashboard() {
+    try {
+        const pr = await fetch('/api/simulation/portfolio');
+        const p = await pr.json();
+        document.getElementById('stat-portfolio').textContent = '$' + fmtNum(p.total_value);
+        document.getElementById('stat-pnl').textContent = changeSign(p.total_pnl_pct) + p.total_pnl_pct.toFixed(1) + '%';
+        document.getElementById('stat-pnl').style.color = p.total_pnl >= 0 ? 'var(--accent)' : 'var(--red)';
+        document.getElementById('stat-positions').textContent = p.position_count;
+        document.getElementById('stat-cash').textContent = '$' + fmtNum(p.cash);
+    } catch(e) {}
+
+    const sr = await fetch('/api/scan/watchlist');
+    const signals = await sr.json();
+    const container = document.getElementById('dash-signals');
+    container.innerHTML = signals.length ? signals.slice(0, 5).map(s => renderSignalRow(s)).join('') : '<div class="empty">No signals yet.</div>';
+    updateDistChart(signals);
+    loadDashNews();
+    loadDashCrypto();
+    checkAlertBadge();
+}
+
+function updateDistChart(signals) {
+    const counts = { NOISE: 0, WATCH: 0, HOLD: 0, BUY: 0, SELL: 0, 'STRONG BUY': 0, 'STRONG SELL': 0 };
+    signals.forEach(s => { if (counts[s.label] !== undefined) counts[s.label]++; });
+    const ctx = document.getElementById('chart-distribution');
+    if (ctx._chart) ctx._chart.destroy();
+    ctx._chart = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: Object.keys(counts), datasets: [{ data: Object.values(counts), backgroundColor: ['#374151','#6b7280','#f59e0b','#00ff88','#ef4444','#00ff88','#ef4444'], borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#6b7280', font: { size: 10, family: 'Inter' } } } } }
+    });
+}
+
+// --- Quick Scan ---
+async function quickScan() {
+    const symbol = (document.getElementById('global-search').value || document.getElementById('quick-symbol').value).toUpperCase().trim();
+    const tf = document.getElementById('quick-tf')?.value || '5m';
+    if (!symbol) return;
+    document.getElementById('quick-symbol').value = symbol;
+    document.getElementById('global-search').value = symbol;
+    document.getElementById('quick-result').innerHTML = '<div class="loading"><div class="spinner"></div>Scanning ' + symbol + '...</div>';
+    const r = await fetch('/api/scan/' + symbol + '?timeframe=' + tf);
+    const data = await r.json();
+    document.getElementById('quick-result').innerHTML = renderSignalRow(data);
+    toast('Scan: ' + symbol + ' - ' + data.label + ' (' + data.score + '/100)');
+}
+
+async function showScanDetail(symbol) {
+    const tf = document.getElementById('quick-tf')?.value || '5m';
+    openModal('<div style="text-align:center;padding:20px"><div class="spinner"></div></div>');
+    const r = await fetch('/api/scan/' + symbol + '?timeframe=' + tf);
+    const s = await r.json();
+    const sc = scoreClass(s.score);
+    const lc = labelClass(s.label);
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:18px;font-family:JetBrains Mono">${symbol}</h2>
+        <button class="btn small secondary" onclick="closeModal()">Close</button>
+    </div>
+    <div style="text-align:center;margin-bottom:20px">
+        <div class="score ${sc}" style="font-size:48px;font-family:JetBrains Mono">${s.score}</div>
+        <span class="label ${lc}" style="font-size:14px;padding:6px 12px">${s.label}</span>
+        <div style="color:var(--muted);margin-top:8px;font-family:JetBrains Mono">$${(s.price||0).toFixed(2)} | ${s.timeframe||'5m'}</div>
+    </div>`;
+    if (s.patterns?.length) {
+        html += '<h3 style="font-size:12px;margin-bottom:8px">Candlestick Patterns</h3><div style="margin-bottom:12px">';
+        s.patterns.forEach(p => { html += '<span class="badge badge-blue" style="margin:2px">' + p.pattern + ' (' + p.direction + ')</span>'; });
+        html += '</div>';
+    }
+    if (s.indicator_signals?.length) {
+        html += '<h3 style="font-size:12px;margin-bottom:8px">Indicator Signals</h3><div style="margin-bottom:12px">';
+        s.indicator_signals.forEach(i => { html += '<span class="badge badge-purple" style="margin:2px">' + i.indicator + ': ' + i.detail + '</span>'; });
+        html += '</div>';
+    }
+    if (s.indicators) {
+        html += '<h3 style="font-size:12px;margin-bottom:8px">Key Levels</h3><table style="width:100%">';
+        html += '<tr><td style="color:var(--muted)">RSI</td><td class="mono" style="text-align:right">' + (s.indicators.rsi?.toFixed(1) || '-') + '</td></tr>';
+        html += '<tr><td style="color:var(--muted)">MACD</td><td class="mono" style="text-align:right">' + (s.indicators.macd?.toFixed(4) || '-') + '</td></tr>';
+        html += '<tr><td style="color:var(--muted)">EMA 9</td><td class="mono" style="text-align:right">$' + (s.indicators.ema9?.toFixed(2) || '-') + '</td></tr>';
+        html += '<tr><td style="color:var(--muted)">EMA 21</td><td class="mono" style="text-align:right">$' + (s.indicators.ema21?.toFixed(2) || '-') + '</td></tr>';
+        html += '<tr><td style="color:var(--muted)">BB Upper</td><td class="mono" style="text-align:right">$' + (s.indicators.bb_upper?.toFixed(2) || '-') + '</td></tr>';
+        html += '<tr><td style="color:var(--muted)">BB Lower</td><td class="mono" style="text-align:right">$' + (s.indicators.bb_lower?.toFixed(2) || '-') + '</td></tr>';
+        html += '</table>';
+    }
+    document.getElementById('modal-content').innerHTML = html;
+}
+
+// --- All Stocks ---
+async function loadAllStocks() {
+    if (!allStocksData.length) {
+        const r = await fetch('/api/live/stocks');
+        const d = await r.json();
+        allStocksData = d.stocks || [];
+        const sectors = [...new Set(allStocksData.map(s => s.sector).filter(Boolean))].sort();
+        const sel = document.getElementById('stock-sector-filter');
+        sel.innerHTML = '<option value="all">All Sectors (' + allStocksData.length + ')</option>';
+        sectors.forEach(s => { sel.innerHTML += '<option value="' + s + '">' + s + '</option>'; });
+    }
+    currentPage.stocks = 0;
+    renderStockPage();
+}
+
+function filterStocks() { currentPage.stocks = 0; renderStockPage(); }
+
+function renderStockPage() {
+    const sector = document.getElementById('stock-sector-filter').value;
+    const search = document.getElementById('stock-text-filter').value.toUpperCase();
+    let filtered = allStocksData;
+    if (sector !== 'all') filtered = filtered.filter(s => s.sector === sector);
+    if (search) filtered = filtered.filter(s => s.symbol.toUpperCase().includes(search) || (s.name||'').toUpperCase().includes(search));
+    paginate(filtered, currentPage.stocks, 'stock-pagination', (items) => {
+        let html = '<table><tr><th>Symbol</th><th>Type</th><th>Sector</th><th></th></tr>';
+        items.forEach(s => {
+            html += `<tr><td class="mono" style="font-weight:600">${s.symbol}</td><td>${s.type||''}</td><td style="color:var(--muted)">${s.sector||''}</td>
+            <td><button class="btn small" onclick="quickScanDirect('${s.symbol}')">Scan</button></td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('stock-list-container').innerHTML = html;
+    });
+}
+
+async function quickScanDirect(sym) {
+    document.getElementById('global-search').value = sym;
+    showPage('dashboard');
+    setTimeout(quickScan, 300);
+}
+
+// --- Live Watch ---
+async function loadLiveWatch() {
+    try {
+        const wr = await fetch('/api/watchlist-sim');
+        const wl = await wr.json();
+        if (!wl.length) {
+            document.getElementById('live-watch-table').innerHTML = '<div class="empty">Add symbols to watch. Use the search box above.</div>';
+            return;
+        }
+        let html = '<table><tr><th>Symbol</th><th style="text-align:right">Price</th><th style="text-align:right">Change</th><th></th></tr>';
+        for (const sym of wl) {
+            try {
+                const pr = await fetch('/api/simulation/price/' + sym);
+                const p = await pr.json();
+                html += `<tr><td class="mono" style="font-weight:600">${sym}</td>
+                <td class="mono" style="text-align:right">$${(p.price||0).toFixed(2)}</td>
+                <td class="mono ${changeClass(p.change_pct)}" style="text-align:right">${changeSign(p.change_pct)}${(p.change_pct||0).toFixed(2)}%</td>
+                <td><button class="btn small danger" onclick="removeLiveWatch('${sym}')">Remove</button></td></tr>`;
+            } catch(e) {
+                html += `<tr><td class="mono" style="font-weight:600">${sym}</td><td colspan="3" style="color:var(--dim)">Loading...</td></tr>`;
+            }
+        }
+        html += '</table>';
+        document.getElementById('live-watch-table').innerHTML = html;
+    } catch(e) {
+        document.getElementById('live-watch-table').innerHTML = '<div class="empty">Error loading watchlist</div>';
+    }
+}
+
+async function removeLiveWatch(sym) {
+    await fetch('/api/watchlist-sim/' + sym, { method: 'DELETE' });
+    loadLiveWatch();
+    toast(sym + ' removed from watch');
+}
+
+function refreshLiveWatch() { loadLiveWatch(); }
+
+// --- Simulator ---
+async function loadSimulator() {
+    const pr = await fetch('/api/simulation/portfolio');
+    const p = await pr.json();
+    document.getElementById('sim-total').textContent = '$' + fmtNum(p.total_value);
+    document.getElementById('sim-cash').textContent = '$' + fmtNum(p.cash);
+    document.getElementById('sim-pnl').textContent = changeSign(p.total_pnl) + '$' + Math.abs(p.total_pnl).toFixed(2);
+    document.getElementById('sim-pnl').style.color = p.total_pnl >= 0 ? 'var(--accent)' : 'var(--red)';
+    document.getElementById('sim-pnl-pct').textContent = changeSign(p.total_pnl_pct) + p.total_pnl_pct.toFixed(1) + '%';
+    document.getElementById('sim-pnl-pct').style.color = p.total_pnl >= 0 ? 'var(--accent)' : 'var(--red)';
+
+    const posEl = document.getElementById('sim-positions');
+    if (!p.positions?.length) {
+        posEl.innerHTML = '<div class="empty">No positions yet. Buy a stock to start.</div>';
+    } else {
+        posEl.innerHTML = p.positions.map(pos => `
+            <div class="position-card">
+                <div class="pos-sym">${pos.symbol}</div>
+                <div class="pos-details">
+                    <div><div class="pos-label">Shares</div><div class="pos-val">${pos.quantity}</div></div>
+                    <div><div class="pos-label">Avg Cost</div><div class="pos-val">$${pos.avg_cost.toFixed(2)}</div></div>
+                    <div><div class="pos-label">Current</div><div class="pos-val">$${pos.current_price.toFixed(2)}</div></div>
+                    <div><div class="pos-label">Market Value</div><div class="pos-val">$${fmtNum(pos.market_value)}</div></div>
+                    <div><div class="pos-label">P&L</div><div class="pos-val" style="color:${pos.unrealized_pnl >= 0 ? 'var(--accent)' : 'var(--red)'}">${changeSign(pos.unrealized_pnl)}$${Math.abs(pos.unrealized_pnl).toFixed(2)}</div></div>
+                    <div><div class="pos-label">P&L %</div><div class="pos-val" style="color:${pos.unrealized_pnl_pct >= 0 ? 'var(--accent)' : 'var(--red)'}">${changeSign(pos.unrealized_pnl_pct)}${pos.unrealized_pnl_pct.toFixed(1)}%</div></div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    const txEl = document.getElementById('sim-transactions');
+    const tr = await fetch('/api/simulation/transactions?limit=30');
+    const txs = await tr.json();
+    if (!txs.length) {
+        txEl.innerHTML = '<div class="empty">No transactions yet.</div>';
+    } else {
+        txEl.innerHTML = '<table><tr><th>Type</th><th>Symbol</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th><th>Time</th></tr>' +
+            txs.map(tx => `<tr><td style="color:${tx.type === 'BUY' ? 'var(--accent)' : 'var(--red)'};font-weight:600">${tx.type}</td><td class="mono" style="font-weight:600">${tx.symbol}</td><td class="mono" style="text-align:right">${tx.quantity}</td><td class="mono" style="text-align:right">$${tx.price.toFixed(2)}</td><td class="mono" style="text-align:right">$${fmtNum(tx.total)}</td><td class="mono" style="color:var(--muted);font-size:11px">${new Date(tx.timestamp * 1000).toLocaleString()}</td></tr>`).join('') +
+            '</table>';
+    }
+}
+
+async function showTradeModal(side) {
+    const sym = document.getElementById('trade-symbol').value.toUpperCase().trim();
+    const qty = parseInt(document.getElementById('trade-qty').value) || 1;
+    if (!sym) { toast('Enter a symbol'); return; }
+
+    const pr = await fetch('/api/simulation/price/' + sym);
+    const p = await pr.json();
+    if (!p.price) { toast('Could not get price for ' + sym); return; }
+    const total = (p.price * qty).toFixed(2);
+
+    openModal(`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h2 style="font-size:16px">${side.toUpperCase()} ${sym}</h2>
+            <button class="btn small secondary" onclick="closeModal()">Close</button>
+        </div>
+        <div class="trade-modal">
+            <label>Symbol</label>
+            <input type="text" value="${sym}" disabled>
+            <label>Quantity</label>
+            <input type="number" id="modal-qty" value="${qty}" min="1" oninput="updateTradeTotal('${sym}', ${p.price})">
+            <label>Price</label>
+            <input type="text" value="$${p.price.toFixed(2)}" disabled>
+            <div class="trade-summary">
+                <div>Total: <strong>$<span id="modal-total">${total}</span></strong></div>
+            </div>
+            <button class="btn ${side === 'sell' ? 'sell' : ''}" style="width:100%;justify-content:center;padding:12px" onclick="executeTrade('${side}', '${sym}')">
+                ${side === 'buy' ? 'Buy' : 'Sell'} ${sym}
+            </button>
+        </div>
+    `);
+}
+
+function updateTradeTotal(sym, price) {
+    const qty = parseInt(document.getElementById('modal-qty').value) || 0;
+    document.getElementById('modal-total').textContent = (price * qty).toFixed(2);
+}
+
+async function executeTrade(side, sym) {
+    const qty = parseInt(document.getElementById('modal-qty').value) || 0;
+    if (qty <= 0) { toast('Invalid quantity'); return; }
+    const url = side === 'buy' ? '/api/simulation/buy' : '/api/simulation/sell';
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, quantity: qty }) });
+    const result = await r.json();
+    if (result.success) {
+        toast(result.message);
+        closeModal();
+        loadSimulator();
+    } else {
+        toast('Error: ' + (result.error || 'Unknown error'));
+    }
+}
+
+async function resetSim() {
+    if (!confirm('Reset portfolio to $100,000? All positions will be lost.')) return;
+    await fetch('/api/simulation/reset', { method: 'POST' });
+    loadSimulator();
+    toast('Portfolio reset');
+}
+
+// --- News ---
+async function loadNews() {
+    const r = await fetch('/api/live/news');
+    const d = await r.json();
+    allNewsData = d.articles || [];
+    currentPage.news = 0;
+    renderNewsPage();
+}
+
+function filterNews() { currentPage.news = 0; renderNewsPage(); }
+
+function renderNewsPage() {
+    const filter = document.getElementById('news-filter').value;
+    let items = allNewsData;
+    if (filter !== 'all') items = items.filter(a => a.sentiment === filter);
+    paginate(items, currentPage.news, 'news-pagination', (pageItems) => {
+        let html = '';
+        pageItems.forEach(a => {
+            const src = a.source.length > 18 ? a.source.substring(0, 16) + '..' : a.source;
+            html += `<div class="news-item" onclick="window.open('${a.url||'#'}','_blank')"><div class="news-source">${src}</div><div class="news-title">${a.title} <span class="sentiment ${a.sentiment}">${a.sentiment}</span></div><div class="news-meta">${(a.published||'').split(' ').slice(1,4).join(' ')}</div></div>`;
+        });
+        document.getElementById('news-table').innerHTML = html || '<div class="empty">No news available</div>';
+    });
+}
+
+async function loadDashNews() {
+    const el = document.getElementById('dash-news');
+    const r = await fetch('/api/live/news');
+    const d = await r.json();
+    if (!d.articles?.length) { el.innerHTML = '<div class="empty">No news available</div>'; return; }
+    document.getElementById('news-count').textContent = d.articles.length;
+    el.innerHTML = d.articles.slice(0, 8).map(a => {
+        const src = a.source.length > 18 ? a.source.substring(0, 16) + '..' : a.source;
+        return `<div class="news-item" onclick="window.open('${a.url||'#'}','_blank')"><div class="news-source">${src}</div><div class="news-title">${a.title} <span class="sentiment ${a.sentiment}">${a.sentiment}</span></div></div>`;
+    }).join('');
+}
+
+// --- Crypto ---
+async function loadCrypto() {
+    const r = await fetch('/api/live/crypto');
+    const d = await r.json();
+    allCryptoData = d.coins || [];
+    currentPage.crypto = 0;
+    renderCryptoPage();
+}
+
+function renderCryptoPage() {
+    paginate(allCryptoData, currentPage.crypto, 'crypto-pagination', (items) => {
+        let html = '<table><tr><th>#</th><th>Coin</th><th style="text-align:right">Price</th><th style="text-align:right">1h</th><th style="text-align:right">24h</th><th style="text-align:right">7d</th><th style="text-align:right">Market Cap</th></tr>';
+        items.forEach(c => {
+            html += `<tr><td class="mono" style="color:var(--dim)">${c.rank}</td><td><strong>${c.symbol}</strong> <span style="color:var(--muted)">${c.name}</span></td><td class="mono" style="text-align:right">$${c.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+            html += `<td class="mono ${changeClass(c.change_1h)}" style="text-align:right">${changeSign(c.change_1h)}${c.change_1h.toFixed(1)}%</td>`;
+            html += `<td class="mono ${changeClass(c.change_24h)}" style="text-align:right">${changeSign(c.change_24h)}${c.change_24h.toFixed(1)}%</td>`;
+            html += `<td class="mono ${changeClass(c.change_7d)}" style="text-align:right">${changeSign(c.change_7d)}${c.change_7d.toFixed(1)}%</td>`;
+            html += `<td class="mono" style="text-align:right;color:var(--muted)">${fmt$(c.market_cap)}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('crypto-table').innerHTML = html;
+    });
+}
+
+async function loadDashCrypto() {
+    const el = document.getElementById('dash-crypto');
+    const r = await fetch('/api/live/crypto');
+    const d = await r.json();
+    if (!d.coins?.length) { el.innerHTML = '<div class="empty">No crypto data</div>'; return; }
+    document.getElementById('crypto-count').textContent = d.coins.length;
+    el.innerHTML = d.coins.slice(0, 8).map(c => `<div class="crypto-row"><div class="crypto-rank">${c.rank}</div><div class="crypto-name">${c.symbol}</div><div class="crypto-price">$${c.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="crypto-change ${changeClass(c.change_24h)}">${changeSign(c.change_24h)}${c.change_24h.toFixed(1)}%</div></div>`).join('');
+}
+
+// --- Calendar ---
+async function loadCalendar() {
+    const r = await fetch('/api/live/calendar');
+    const d = await r.json();
+    allCalendarData = d.events || [];
+    currentPage.calendar = 0;
+    renderCalendarPage();
+}
+
+function renderCalendarPage() {
+    paginate(allCalendarData, currentPage.calendar, 'calendar-pagination', (items) => {
+        let html = '<table><tr><th>Event</th><th>Country</th><th>Date</th><th>Impact</th><th>Forecast</th><th>Previous</th><th>Actual</th></tr>';
+        items.forEach(e => {
+            html += `<tr><td>${e.title}</td><td>${e.country}</td><td class="mono" style="color:var(--muted);font-size:11px">${e.date}</td>`;
+            html += `<td><span class="impact ${e.impact||'low'}">${(e.impact||'low').toUpperCase()}</span></td>`;
+            html += `<td class="mono" style="text-align:right">${e.forecast||'-'}</td>`;
+            html += `<td class="mono" style="text-align:right">${e.previous||'-'}</td>`;
+            html += `<td class="mono" style="text-align:right;font-weight:600">${e.actual||'-'}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('calendar-table').innerHTML = html || '<div class="empty">No events available</div>';
+    });
+}
+
+// --- Options Flow ---
+async function loadOptions() {
+    const r = await fetch('/api/live/options');
+    const d = await r.json();
+    allOptionsData = d.flow || [];
+    currentPage.options = 0;
+    renderOptionsPage();
+}
+
+function renderOptionsPage() {
+    paginate(allOptionsData, currentPage.options, 'options-pagination', (items) => {
+        let html = '<table><tr><th>Symbol</th><th style="text-align:right">Strike</th><th>Type</th><th style="text-align:right">Price</th><th style="text-align:right">Volume</th><th style="text-align:right">OI</th><th style="text-align:right">Vol/OI</th><th></th></tr>';
+        items.forEach(f => {
+            const tc = f.type === 'call' ? 'var(--accent)' : 'var(--red)';
+            html += `<tr><td class="mono" style="font-weight:600">${f.symbol}</td><td class="mono" style="text-align:right">$${f.strike}</td>`;
+            html += `<td style="color:${tc};font-weight:600;text-transform:uppercase;font-size:11px">${f.type}</td>`;
+            html += `<td class="mono" style="text-align:right">$${(f.price||0).toFixed(2)}</td>`;
+            html += `<td class="mono" style="text-align:right">${fmtNum(f.volume)}</td>`;
+            html += `<td class="mono" style="text-align:right">${fmtNum(f.open_interest)}</td>`;
+            html += `<td class="mono" style="text-align:right">${f.ratio}x</td>`;
+            html += `<td>${f.unusual ? '<span class="badge badge-red">UNUSUAL</span>' : ''}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('options-table').innerHTML = html || '<div class="empty">No options data available</div>';
+    });
+}
+
+// --- Insider ---
+async function loadInsider() {
+    const r = await fetch('/api/live/insider');
+    const d = await r.json();
+    allInsiderData = d.trades || [];
+    currentPage.insider = 0;
+    renderInsiderPage();
+}
+
+function filterInsider() { currentPage.insider = 0; renderInsiderPage(); }
+
+function renderInsiderPage() {
+    const filter = document.getElementById('insider-filter').value;
+    let items = allInsiderData;
+    if (filter !== 'all') items = items.filter(t => t.trade_type?.toLowerCase().includes(filter));
+    paginate(items, currentPage.insider, 'insider-pagination', (pageItems) => {
+        let html = '<table><tr><th>Insider</th><th>Title</th><th>Ticker</th><th>Type</th><th style="text-align:right">Shares</th><th style="text-align:right">Price</th><th>Date</th><th>Source</th></tr>';
+        pageItems.forEach(t => {
+            const tc = t.trade_type?.toLowerCase().includes('buy') ? 'var(--accent)' : 'var(--red)';
+            html += `<tr><td>${t.insider||''}</td><td style="color:var(--muted);font-size:11px">${t.title||''}</td><td class="mono" style="font-weight:600">${t.ticker||''}</td>`;
+            html += `<td style="color:${tc};font-weight:600;text-transform:uppercase;font-size:11px">${t.trade_type||''}</td>`;
+            html += `<td class="mono" style="text-align:right">${fmtNum(t.shares||0)}</td>`;
+            html += `<td class="mono" style="text-align:right">${t.price||'-'}</td>`;
+            html += `<td class="mono" style="color:var(--muted);font-size:11px">${t.date||''}</td>`;
+            html += `<td style="color:var(--dim);font-size:10px">${t.source||''}</td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('insider-table').innerHTML = html || '<div class="empty">No insider data available</div>';
+    });
+}
+
+// --- Analyst ---
+async function loadAnalyst() {
+    const el = document.getElementById('analyst-table');
+    el.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+    const r = await fetch('/api/live/analyst');
+    const d = await r.json();
+    if (!d.ratings?.length) { el.innerHTML = '<div class="empty">No analyst data available</div>'; return; }
+    el.innerHTML = '<div class="grid-2">' + d.ratings.map(a => {
+        const rc = a.recommendation?.includes('buy') ? 'var(--accent)' : a.recommendation?.includes('sell') ? 'var(--red)' : 'var(--yellow)';
+        let html = `<div class="card" style="margin-bottom:0"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><strong class="mono" style="font-size:16px">${a.ticker}</strong><span class="badge" style="background:${rc}22;color:${rc}">${(a.recommendation||'N/A').toUpperCase()}</span></div>`;
+        html += `<div style="display:flex;gap:16px;margin-bottom:8px"><div><div style="font-size:10px;color:var(--dim)">LOW</div><div class="mono" style="font-size:13px">$${a.target_low}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--dim)">MEAN</div><div class="mono" style="font-size:13px;font-weight:600">$${a.target_mean}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--dim)">HIGH</div><div class="mono" style="font-size:13px">$${a.target_high}</div></div>`;
+        html += `<div><div style="font-size:10px;color:var(--dim)">COUNT</div><div class="mono" style="font-size:13px">${a.num_analysts}</div></div></div>`;
+        html += `<div style="display:flex;gap:4px;font-size:10px"><span style="color:var(--accent)">SB:${a.strong_buy}</span> <span style="color:var(--accent)">B:${a.buy}</span> <span style="color:var(--yellow)">H:${a.hold}</span> <span style="color:var(--red)">S:${a.sell}</span> <span style="color:var(--red)">SS:${a.strong_sell}</span></div>`;
+        if (a.recent_actions?.length) {
+            html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">';
+            a.recent_actions.slice(0,3).forEach(ra => { html += `<div style="font-size:11px;color:var(--muted);margin-bottom:2px"><strong>${ra.firm}</strong>: ${ra.action}</div>`; });
+            html += '</div>';
+        }
+        return html + '</div>';
+    }).join('') + '</div>';
+}
+
+// --- Alerts ---
+async function checkAlerts() {
+    const r = await fetch('/api/alerts/check');
+    const d = await r.json();
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="font-size:16px">Alerts</h2><button class="btn small secondary" onclick="closeModal()">Close</button></div>';
+    if (!d.alerts?.length) {
+        html += '<div class="empty">No alerts</div>';
+    } else {
+        d.alerts.forEach(a => {
+            const color = a.type === 'success' ? 'var(--accent)' : a.type === 'danger' ? 'var(--red)' : a.type === 'warning' ? 'var(--yellow)' : 'var(--blue)';
+            html += `<div style="padding:10px;background:var(--bg);border-radius:6px;margin-bottom:8px;border-left:3px solid ${color}">
+                <div style="font-weight:600;font-size:13px;color:${color}">${a.title}</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px">${a.message}</div>
+            </div>`;
+        });
+    }
+    openModal(html);
+}
+
+async function checkAlertBadge() {
+    try {
+        const r = await fetch('/api/alerts/check');
+        const d = await r.json();
+        const badge = document.getElementById('alert-count');
+        if (d.count > 0 && d.alerts?.[0]?.type !== 'info') {
+            badge.textContent = d.count;
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch(e) {}
+}
+
+// --- Auto-refresh ---
+setInterval(() => {
+    const active = document.querySelector('.page.active')?.id;
+    if (active === 'page-dashboard') loadDashboard();
+    checkAlertBadge();
+}, 30000);
+
+// --- Init ---
+loadDashboard();
+if (!allStocksData.length) fetch('/api/live/stocks').then(r=>r.json()).then(d => { allStocksData = d.stocks || []; });
+document.getElementById('last-update').textContent = 'Last: ' + new Date().toLocaleTimeString('en-US', { hour12: false });
+setInterval(() => { document.getElementById('last-update').textContent = 'Last: ' + new Date().toLocaleTimeString('en-US', { hour12: false }); }, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Pattern Scanner - Preview</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --card: #12121a;
+            --border: #1e1e2e;
+            --accent: #00ff88;
+            --accent-dim: #00ff8822;
+            --red: #ff4444;
+            --red-dim: #ff444422;
+            --yellow: #ffaa00;
+            --yellow-dim: #ffaa0022;
+            --text: #e0e0e0;
+            --muted: #666;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; height: 56px; position: sticky; top: 0; z-index: 100; }
+        .topbar .logo { font-size: 18px; font-weight: 700; color: var(--accent); margin-right: 32px; white-space: nowrap; }
+        .topbar .logo span { color: var(--muted); font-weight: 400; }
+        .topbar nav { display: flex; gap: 2px; }
+        .topbar nav button { background: none; border: none; color: var(--muted); padding: 16px 16px; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+        .topbar nav button:hover { color: var(--text); }
+        .topbar nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .topbar .status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+        .topbar .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .page { display: none; max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .page.active { display: block; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 900px) { .grid-2, .grid-4 { grid-template-columns: 1fr; } }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .card h2 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; font-weight: 600; }
+        .stat-card { text-align: center; padding: 24px 16px; }
+        .stat-card .value { font-size: 32px; font-weight: 700; color: var(--accent); line-height: 1; }
+        .stat-card .label { color: var(--muted); font-size: 12px; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .signal-row { display: flex; align-items: center; gap: 16px; padding: 14px; background: var(--bg); border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border); transition: border-color 0.15s; cursor: pointer; }
+        .signal-row:hover { border-color: var(--accent); }
+        .signal-row .symbol { font-weight: 700; font-size: 16px; min-width: 80px; }
+        .signal-row .price { font-size: 14px; color: var(--muted); min-width: 80px; }
+        .signal-row .patterns { font-size: 12px; color: var(--muted); flex: 1; }
+        .signal-row .score-box { text-align: right; min-width: 80px; }
+        .signal-row .score { font-size: 28px; font-weight: 700; line-height: 1; }
+        .signal-row .lbl { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .green { color: var(--accent); }
+        .red { color: var(--red); }
+        .yellow { color: var(--yellow); }
+        .gray { color: var(--muted); }
+        .bg-green { background: var(--accent-dim); color: var(--accent); }
+        .bg-red { background: var(--red-dim); color: var(--red); }
+        .bg-yellow { background: var(--yellow-dim); color: var(--yellow); }
+        .bg-gray { background: #ffffff0a; color: var(--muted); }
+        .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: var(--border); color: var(--text); margin-right: 4px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 12px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); font-weight: 600; }
+        td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border); }
+        .chart-container { position: relative; height: 300px; }
+        .empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+        input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-size: 14px; flex: 1; }
+        input::placeholder { color: var(--muted); }
+        .btn { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; }
+        .btn:hover { background: #00cc6a; }
+        .btn.secondary { background: var(--border); color: var(--text); }
+        .hero { text-align: center; padding: 60px 24px 40px; }
+        .hero h1 { font-size: 40px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
+        .hero p { font-size: 16px; color: var(--muted); max-width: 600px; margin: 0 auto 24px; }
+        .hero .start-btn { display: inline-block; background: var(--accent); color: #000; padding: 14px 32px; border-radius: 8px; font-weight: 700; font-size: 16px; text-decoration: none; }
+        .hero .start-btn:hover { background: #00cc6a; }
+        .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 32px; }
+        @media (max-width: 768px) { .features { grid-template-columns: 1fr; } }
+        .feature { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; }
+        .feature .icon { font-size: 32px; margin-bottom: 12px; }
+        .feature h3 { font-size: 16px; margin-bottom: 8px; }
+        .feature p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+        .setup-steps { max-width: 700px; margin: 0 auto; }
+        .step { display: flex; gap: 16px; margin-bottom: 24px; }
+        .step-num { width: 32px; height: 32px; background: var(--accent); color: #000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+        .step-content h3 { font-size: 15px; margin-bottom: 4px; }
+        .step-content p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+        .step-content code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent); }
+        .score-demo { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 20px 0; }
+        .score-pill { padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="logo">TPS <span>Scanner</span></div>
+        <nav>
+            <button class="active" onclick="showPage('home',this)">Home</button>
+            <button onclick="showPage('dashboard',this)">Dashboard</button>
+            <button onclick="showPage('stocks',this)">Stocks</button>
+            <button onclick="showPage('setup',this)">Setup</button>
+        </nav>
+        <div class="status"><div class="dot"></div><span>Preview Mode</span></div>
+    </div>
+
+    <!-- HOME -->
+    <div class="page active" id="page-home">
+        <div class="hero">
+            <h1>Trading Pattern Scanner</h1>
+            <p>Watch stocks, prediction markets, and crypto for patterns. Get score-driven signals so you don't stare at charts all day.</p>
+            <a class="start-btn" href="https://github.com/your-repo/trading-scraper#quick-start">Get Started</a>
+        </div>
+        <div class="features">
+            <div class="feature">
+                <div class="icon">&#x1f4c8;</div>
+                <h3>Stock Patterns</h3>
+                <p>24 candlestick patterns + RSI, MACD, EMA, Bollinger Bands via TA-Lib. Scored 0-100 with buy/sell labels.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">&#x1f310;</div>
+                <h3>Multi-Market</h3>
+                <p>Polymarket prediction markets, Solana wallet tracking, and any public website scraped for data.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">&#x1f514;</div>
+                <h3>Smart Alerts</h3>
+                <p>Desktop notifications + Discord webhooks. Only fires on BUY/SELL signals, not noise. Configurable cooldown.</p>
+            </div>
+        </div>
+        <div style="max-width:700px;margin:48px auto 0;text-align:center">
+            <h2 style="font-size:18px;margin-bottom:16px">Signal Score System</h2>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Each scan produces a confidence score. Higher = more reliable signal.</p>
+            <div class="score-demo">
+                <div class="score-pill bg-gray">0-20 NOISE</div>
+                <div class="score-pill bg-gray">21-40 WATCH</div>
+                <div class="score-pill bg-yellow">41-60 HOLD</div>
+                <div class="score-pill bg-green">61-80 BUY</div>
+                <div class="score-pill bg-red">61-80 SELL</div>
+                <div class="score-pill bg-green">81-100 STRONG BUY</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="page" id="page-dashboard">
+        <div class="grid-4" style="margin-bottom:16px">
+            <div class="card stat-card"><div class="value">5</div><div class="label">Watching</div></div>
+            <div class="card stat-card"><div class="value">12</div><div class="label">Signals</div></div>
+            <div class="card stat-card"><div class="value">3</div><div class="label">Alerts</div></div>
+            <div class="card stat-card"><div class="value">$5,000</div><div class="label">Account</div></div>
+        </div>
+        <div class="grid-2">
+            <div class="card">
+                <h2>Live Signals</h2>
+                <div class="signal-row"><div class="symbol">AAPL</div><div class="price">$198.45</div><div class="patterns">Engulfing, Hammer</div><div class="score-box"><div class="score green">78</div><span class="lbl bg-green">BUY</span></div></div>
+                <div class="signal-row"><div class="symbol">TSLA</div><div class="price">$248.30</div><div class="patterns">Doji, RSI Oversold</div><div class="score-box"><div class="score red">85</div><span class="lbl bg-red">STRONG SELL</span></div></div>
+                <div class="signal-row"><div class="symbol">NVDA</div><div class="price">$124.80</div><div class="patterns">Morning Star</div><div class="score-box"><div class="score yellow">45</div><span class="lbl bg-yellow">HOLD</span></div></div>
+                <div class="signal-row"><div class="symbol">AMD</div><div class="price">$162.15</div><div class="patterns">None</div><div class="score-box"><div class="score gray">12</div><span class="lbl bg-gray">NOISE</span></div></div>
+                <div class="signal-row"><div class="symbol">BTC-USD</div><div class="price">$67,420</div><div class="patterns">Engulfing, MACD Cross</div><div class="score-box"><div class="score green">71</div><span class="lbl bg-green">BUY</span></div></div>
+            </div>
+            <div class="card">
+                <h2>Signal Distribution</h2>
+                <div class="chart-container"><canvas id="demo-chart"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Quick Scan</h2>
+            <div class="input-row">
+                <input type="text" placeholder="Enter ticker (e.g. AAPL, TSLA, BTC-USD)">
+                <select><option>5 min</option><option>15 min</option><option>1 Hour</option><option>Daily</option></select>
+                <button class="btn">Scan</button>
+            </div>
+            <div class="signal-row"><div class="symbol">MSFT</div><div class="price">$420.55</div><div class="patterns">Three White Soldiers, EMA9 > EMA21</div><div class="score-box"><div class="score green">82</div><span class="lbl bg-green">STRONG BUY</span></div></div>
+        </div>
+    </div>
+
+    <!-- STOCKS -->
+    <div class="page" id="page-stocks">
+        <div class="grid-2">
+            <div class="card">
+                <h2>Watchlist</h2>
+                <div class="input-row"><input type="text" placeholder="Add ticker..."><button class="btn">Add</button></div>
+                <table><tr><th>Symbol</th><th>Source</th><th>Added</th><th></th></tr>
+                <tr><td style="font-weight:600">AAPL</td><td>yahoo</td><td style="color:var(--muted)">2024-01-15</td><td><button class="btn secondary" style="padding:4px 8px;font-size:11px">Remove</button></td></tr>
+                <tr><td style="font-weight:600">TSLA</td><td>yahoo</td><td style="color:var(--muted)">2024-01-15</td><td><button class="btn secondary" style="padding:4px 8px;font-size:11px">Remove</button></td></tr>
+                <tr><td style="font-weight:600">NVDA</td><td>yahoo</td><td style="color:var(--muted)">2024-01-14</td><td><button class="btn secondary" style="padding:4px 8px;font-size:11px">Remove</button></td></tr>
+                </table>
+            </div>
+            <div class="card">
+                <h2>Scan Results</h2>
+                <div class="input-row"><select><option>5 min</option></select><button class="btn">Scan All</button></div>
+                <div class="signal-row"><div class="symbol">AAPL</div><div class="price">$198.45</div><div class="patterns">Engulfing</div><div class="score-box"><div class="score green">78</div><span class="lbl bg-green">BUY</span></div></div>
+                <div class="signal-row"><div class="symbol">TSLA</div><div class="price">$248.30</div><div class="patterns">Doji</div><div class="score-box"><div class="score red">85</div><span class="lbl bg-red">STRONG SELL</span></div></div>
+                <div class="signal-row"><div class="symbol">NVDA</div><div class="price">$124.80</div><div class="patterns">Morning Star</div><div class="score-box"><div class="score yellow">45</div><span class="lbl bg-yellow">HOLD</span></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETUP -->
+    <div class="page" id="page-setup">
+        <div style="text-align:center;margin-bottom:32px">
+            <h1 style="font-size:24px;margin-bottom:8px">Setup Guide</h1>
+            <p style="color:var(--muted)">Get running in 5 minutes</p>
+        </div>
+        <div class="setup-steps">
+            <div class="step"><div class="step-num">1</div><div class="step-content"><h3>Install TA-Lib</h3><p>The C library for pattern detection. On Windows: <code>pip install TA-Lib --find-links https://github.com/cgohlke/talib-build/releases</code>. On Mac: <code>brew install ta-lib</code>.</p></div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-content"><h3>Install Python deps</h3><p><code>pip install -r requirements.txt</code> — installs yfinance, TA-Lib wrapper, Quart, FastMCP, aiosqlite, httpx, and more.</p></div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-content"><h3>Configure</h3><p><code>cp .env.example .env</code> then edit. Minimum: set <code>ACCOUNT_SIZE=100</code>. Optional: add Discord webhook, Solana wallets, Birdeye API key.</p></div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-content"><h3>Run</h3><p><code>python src/main.py</code> — starts the dashboard on port 5000, MCP server on 8001, and background scanner.</p></div></div>
+            <div class="step"><div class="step-num">5</div><div class="step-content"><h3>Open Dashboard</h3><p>Go to <code>http://localhost:5000</code>. Add tickers to your watchlist, click Scan, and watch signals appear.</p></div></div>
+        </div>
+    </div>
+
+<script>
+function showPage(name, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.querySelectorAll('.topbar nav button').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+}
+
+// Demo chart
+new Chart(document.getElementById('demo-chart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['NOISE', 'WATCH', 'HOLD', 'BUY', 'SELL'],
+        datasets: [{ data: [2, 1, 1, 2, 1], backgroundColor: ['#555','#888','#ffaa00','#00ff88','#ff4444'], borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#888', font: { size: 11 }, padding: 12 } } } }
+});
+</script>
+</body>
+</html>
