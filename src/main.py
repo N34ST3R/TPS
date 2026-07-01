@@ -50,7 +50,7 @@ async def run_mcp():
 
 async def main():
     await get_db()
-    print("Trading Pattern Scanner starting...")
+    # print("Trading Pattern Scanner starting...")
     print("Dashboard: http://localhost:5000")
     print("MCP Server: http://localhost:8001")
 
