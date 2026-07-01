@@ -1,8 +1,32 @@
+import asyncio
 import time
-import httpx
+import yfinance as yf
 
 _cache = {}
-_cache_ttl = 240
+_cache_ttl = 60
+
+ANALYST_TICKERS = [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "TSLA",
+    "META",
+    "AMD",
+    "NFLX",
+    "JPM",
+    "JNJ",
+    "V",
+    "XOM",
+    "UNH",
+    "WMT",
+    "PG",
+    "MA",
+    "HD",
+    "CVX",
+    "COST",
+]
 
 
 async def fetch_analyst() -> dict:
@@ -12,91 +36,69 @@ async def fetch_analyst() -> dict:
         return {k: v for k, v in _cache[cache_key].items() if k != "_ts"}
 
     ratings = []
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        popular = [
-            "AAPL",
-            "MSFT",
-            "GOOGL",
-            "AMZN",
-            "NVDA",
-            "TSLA",
-            "META",
-            "AMD",
-            "NFLX",
-            "JPM",
-        ]
 
-        for ticker in popular[:5]:
+    def _fetch():
+        for ticker in ANALYST_TICKERS:
             try:
-                resp = await client.get(
-                    f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}",
-                    params={
-                        "modules": "upgradeDowngradeHistory,recommendationTrend,defaultKeyStatistics,financialData"
-                    },
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                if resp.status_code == 200:
-                    data = resp.json().get("quoteSummary", {}).get("result", [{}])[0]
+                t = yf.Ticker(ticker)
+                info = t.info
+                if not info or info.get("quoteType") is None:
+                    continue
 
-                    stats = data.get("defaultKeyStatistics", {})
-                    fin = data.get("financialData", {})
-                    history = data.get("upgradeDowngradeHistory", {}).get("history", [])
+                target_low = info.get("targetLowPrice") or 0
+                target_high = info.get("targetHighPrice") or 0
+                target_mean = info.get("targetMeanPrice") or 0
+                target_median = info.get("targetMedianPrice") or 0
+                num_analysts = info.get("numberOfAnalystOpinions") or 0
+                rec = info.get("recommendationKey", "")
 
-                    target_low = stats.get("targetLowPrice", {}).get("raw", 0) or 0
-                    target_high = stats.get("targetHighPrice", {}).get("raw", 0) or 0
-                    target_mean = stats.get("targetMeanPrice", {}).get("raw", 0) or 0
-                    target_median = (
-                        stats.get("targetMedianPrice", {}).get("raw", 0) or 0
-                    )
-                    num_analysts = (
-                        stats.get("numberOfAnalystOpinions", {}).get("raw", 0) or 0
-                    )
-                    rec = data.get("recommendationTrend", {}).get("trend", [{}])
-                    rec_summary = rec[0] if rec else {}
+                strong_buy = info.get("strongBuy") or 0
+                buy = info.get("buy") or 0
+                hold = info.get("hold") or 0
+                sell = info.get("sell") or 0
+                strong_sell = info.get("strongSell") or 0
 
-                    recent_actions = []
-                    for h in history[:5]:
-                        firm = h.get("firm", "")
-                        action = (
-                            h.get("fromGrade", "") + " -> " + h.get("toGrade", "")
-                            if h.get("toGrade")
-                            else h.get("action", "")
-                        )
-                        date = h.get("epochGradeDate", 0)
-                        recent_actions.append(
-                            {
-                                "firm": firm,
-                                "action": action,
-                                "date": date,
-                            }
-                        )
+                recent_actions = []
+                try:
+                    upgrades = t.upgrades_downgrades
+                    if upgrades is not None and not upgrades.empty:
+                        for _, row in upgrades.head(5).iterrows():
+                            firm = str(row.get("Firm", ""))
+                            action = (
+                                str(row.get("Action", ""))
+                                + " "
+                                + str(row.get("ToGrade", ""))
+                            )
+                            recent_actions.append(
+                                {"firm": firm, "action": action.strip()}
+                            )
+                except Exception:
+                    pass
 
+                if num_analysts > 0:
                     ratings.append(
                         {
                             "ticker": ticker,
-                            "target_low": round(target_low, 2),
-                            "target_high": round(target_high, 2),
-                            "target_mean": round(target_mean, 2),
-                            "target_median": round(target_median, 2),
+                            "target_low": round(float(target_low), 2),
+                            "target_high": round(float(target_high), 2),
+                            "target_mean": round(float(target_mean), 2),
+                            "target_median": round(float(target_median), 2),
                             "num_analysts": int(num_analysts),
-                            "recommendation": rec_summary.get("recommendationKey", ""),
-                            "strong_buy": int(rec_summary.get("strongBuy", 0) or 0),
-                            "buy": int(rec_summary.get("buy", 0) or 0),
-                            "hold": int(rec_summary.get("hold", 0) or 0),
-                            "sell": int(rec_summary.get("sell", 0) or 0),
-                            "strong_sell": int(rec_summary.get("strongSell", 0) or 0),
+                            "recommendation": rec,
+                            "strong_buy": int(strong_buy),
+                            "buy": int(buy),
+                            "hold": int(hold),
+                            "sell": int(sell),
+                            "strong_sell": int(strong_sell),
                             "recent_actions": recent_actions,
                         }
                     )
             except Exception:
                 pass
 
-    result = {
-        "ratings": ratings,
-        "total": len(ratings),
-        "updated_at": now,
-    }
+    await asyncio.to_thread(_fetch)
+
+    result = {"ratings": ratings, "total": len(ratings), "updated_at": now}
     result["_ts"] = now
     _cache[cache_key] = result
-
     return {k: v for k, v in result.items() if k != "_ts"}

@@ -1,13 +1,11 @@
 import asyncio
 import time
-import httpx
-import re
-from typing import Optional
+import yfinance as yf
 
 _cache = {}
-_cache_ttl = {}
+_cache_ttl = 60
 
-STOCKS_TO_TRACK = [
+INSIDER_TICKERS = [
     "AAPL",
     "MSFT",
     "GOOGL",
@@ -78,164 +76,97 @@ STOCKS_TO_TRACK = [
     "SO",
     "DUK",
     "ICE",
-    "USB",
-    "PNC",
-    "TFC",
-    "BBT",
-    "STI",
-    "FITB",
-    "Key",
-    "CFG",
-    "MTB",
-    "HBAN",
-    "OXY",
-    "COP",
-    "EOG",
-    "SLB",
-    "MPC",
-    "PSX",
-    "VLO",
-    "PXD",
-    "DVN",
-    "FANG",
     "PLTR",
     "SOFI",
     "RIVN",
     "LCID",
     "NIO",
-    "XPEV",
-    "BABA",
-    "PDD",
-    "JD",
-    "BIDU",
     "COIN",
     "MSTR",
     "SQ",
     "SHOP",
-    "SNOW",
-    "NET",
-    "DDOG",
-    "CRWD",
-    "ZS",
-    "PANW",
-    "SPY",
-    "QQQ",
-    "IWM",
-    "DIA",
-    "VTI",
-    "VOO",
-    "ARKK",
-    "XLF",
-    "XLE",
-    "XLK",
 ]
-
-INSIDER_URLS = [
-    "http://openinsider.com/screener?s=&o=&pl=0&ph=&ll=&lh=&fd=0&fdr=&td=0&tdr=&fiedr=&fddr=&fddays=0&fdays=0&tdays=0&is498=1&is498=1&pre498=1&is498c498=1&coession=&count=100&act=&cnt=100&page=0",
-    "http://openinsider.com/screener?s=&o=&pl=0&ph=&ll=&lh=&fd=0&fdr=&td=0&tdr=&fiedr=&fddr=&fddays=0&fdays=0&tdays=0&is498=1&is498=1&pre498=1&is498c498=1&coession=&count=100&act=&cnt=100&page=1",
-    "http://openinsider.com/screener?s=&o=&pl=0&ph=&ll=&lh=&fd=0&fdr=&td=0&tdr=&fiedr=&fddr=&fddays=0&fdays=0&tdays=0&is498=1&is498=1&pre498=1&is498c498=1&coession=&count=100&act=&cnt=100&page=2",
-]
-
-SEC_FILINGS_URL = "https://efts.sec.gov/LATEST/search-index?q=%22Form+4%22&dateRange=custom&startdt={start}&enddt={end}&forms=4"
-
-
-def _parse_openinsider(html: str) -> list[dict]:
-    trades = []
-    rows = re.findall(r"<tr[^>]*class='[^']*'[^>]*>(.*?)</tr>", html, re.DOTALL)
-    for row in rows:
-        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL)
-        if len(cells) >= 10:
-
-            def clean(c):
-                return re.sub(r"<[^>]+>", "", c).strip()
-
-            ticker = clean(cells[1])
-            insider_name = clean(cells[3])
-            title = clean(cells[4])
-            trade_type = clean(cells[5])
-            price = clean(cells[6])
-            qty = clean(cells[7])
-            owned = clean(cells[8])
-            delta = clean(cells[9])
-            value = clean(cells[10]) if len(cells) > 10 else ""
-            date = clean(cells[2]) if len(cells) > 2 else ""
-
-            if ticker:
-                trades.append(
-                    {
-                        "ticker": ticker,
-                        "insider": insider_name,
-                        "title": title,
-                        "trade_type": trade_type,
-                        "price": price,
-                        "shares": qty,
-                        "owned": owned,
-                        "delta_ownership": delta,
-                        "value": value,
-                        "date": date,
-                        "source": "OpenInsider",
-                    }
-                )
-    return trades
 
 
 async def fetch_insider() -> dict:
     now = time.time()
     cache_key = "insider"
-    if cache_key in _cache and now - _cache[cache_key]["_ts"] < _cache_ttl.get(
-        cache_key, 45
-    ):
+    if cache_key in _cache and now - _cache[cache_key]["_ts"] < _cache_ttl:
         return {k: v for k, v in _cache[cache_key].items() if k != "_ts"}
 
     all_trades = []
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        for url in INSIDER_URLS:
+
+    def _fetch():
+        import re
+
+        for ticker in INSIDER_TICKERS[:75]:
             try:
-                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                if resp.status_code == 200:
-                    all_trades.extend(_parse_openinsider(resp.text))
+                t = yf.Ticker(ticker)
+                insider = t.insider_transactions
+                if insider is None or insider.empty:
+                    continue
+                for _, row in insider.head(5).iterrows():
+                    text = str(row.get("Text", ""))
+                    raw_shares = row.get("Shares")
+                    raw_value = row.get("Value")
+                    shares = (
+                        int(raw_shares)
+                        if raw_shares and raw_shares == raw_shares
+                        else 0
+                    )
+                    value = (
+                        float(raw_value) if raw_value and raw_value == raw_value else 0
+                    )
+
+                    price_match = re.search(r"at price ([\d.]+)", text)
+                    text_price = float(price_match.group(1)) if price_match else 0
+                    price = (
+                        round(value / shares, 2)
+                        if shares > 0 and value > 0
+                        else text_price
+                    )
+
+                    owns = str(row.get("Ownership", ""))
+                    insider_name = str(row.get("Insider", ""))
+                    position = str(row.get("Position", ""))
+                    start = str(row.get("Start Date", ""))
+
+                    text_lower = text.lower()
+                    is_buy = "purchase" in text_lower or "buy" in text_lower
+                    is_sell = "sale" in text_lower or "sell" in text_lower
+                    is_gift = (
+                        "gift" in text_lower
+                        or "award" in text_lower
+                        or "grant" in text_lower
+                    )
+                    trade_type = (
+                        "buy"
+                        if is_buy
+                        else ("sell" if is_sell else ("gift" if is_gift else "other"))
+                    )
+
+                    all_trades.append(
+                        {
+                            "ticker": ticker,
+                            "insider": insider_name,
+                            "title": position,
+                            "trade_type": trade_type,
+                            "price": price if trade_type != "gift" else 0,
+                            "shares": shares,
+                            "owned": owns,
+                            "delta_ownership": "",
+                            "value": value if trade_type != "gift" else 0,
+                            "date": start,
+                            "source": "Yahoo Finance",
+                            "detail": text[:120] if text else "",
+                        }
+                    )
             except Exception:
                 pass
 
-            if len(all_trades) >= 200:
-                break
+    await asyncio.to_thread(_fetch)
 
-        for ticker in STOCKS_TO_TRACK[:20]:
-            try:
-                url = f"http://openinsider.com/{ticker}"
-                resp = await client.get(
-                    url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8
-                )
-                if resp.status_code == 200:
-                    new_trades = _parse_openinsider(resp.text)
-                    for t in new_trades:
-                        t["source"] = f"OpenInsider ({ticker})"
-                    all_trades.extend(new_trades)
-            except Exception:
-                pass
-
-    seen = set()
-    unique = []
-    for t in all_trades:
-        key = (
-            t.get("ticker", ""),
-            t.get("insider", ""),
-            t.get("date", ""),
-            t.get("shares", ""),
-        )
-        if key not in seen:
-            seen.add(key)
-            unique.append(t)
-
-    unique.sort(key=lambda x: x.get("date", ""), reverse=True)
-
-    result = {
-        "trades": unique[:200],
-        "total": len(unique),
-        "updated_at": now,
-    }
+    result = {"trades": all_trades[:200], "total": len(all_trades), "updated_at": now}
     result["_ts"] = now
     _cache[cache_key] = result
-    _cache_ttl[cache_key] = 45
-
     return {k: v for k, v in result.items() if k != "_ts"}
